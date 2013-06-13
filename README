@@ -1,0 +1,24 @@
+README for Flea2Flea
+
+If you have a graphical environment, you should be able to
+double-click the flea2flea.jar icon to start the application.
+
+If you have a command-line environment, you can type
+ $ java -jar flea2flea.jar
+to start the application.
+
+Once it is running, use the Help menu to browse the Usage Scenarios
+and How To.
+
+
+
+Flea2Flea is a pocket web server designed for ad-hoc file sharing.  If
+you want to copy a file from one computer to another without
+configuring a web server, ftp server, or network file systems then
+Flea2Flea is for you.
+
+
+
+    http://sourceforge.net/projects/flea2flea/
+  - Robert Forsman
+    <hammor@users.sourceforge.net>

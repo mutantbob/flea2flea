@@ -1,0 +1,92 @@
+<html>
+<head>
+<title>Flea 2 Flea usage scenarios</title>
+</head>
+<body>
+
+<h1>File Sharing scenarios</h1>
+
+<h3>I have a file on one computer and I want to copy it to another
+computer</h3>
+
+<h4> Solution 1: </h4>
+
+Run Flea2Flea on the computer that has the file and use the menu to
+add that file as an Offering.  Make a note of the URL in your Local
+Addresses.  Go to the other computer and use a web browser to download
+the file from the URL you memorized.  Do not forget the port number.
+
+<h4> Solution 2: </h4>
+
+Run Flea2Flea on the computer that does not yet have the file.  Use
+the menu to add an Uploadable specifying the location to where you
+want to upload the file.  Make sure you specify a maximum size that is
+big enough to receive all of the file (add a few megabytes, it will
+not hurt).  Remember the URL from the Local Addresses panel, as well
+as the Tag you gave to the Uploadable.  Go to the computer that has
+the file and browse to the Flea2Flea URL of the host that needs the
+file.  Use the Upload form to send the file to the host that needs the
+file.
+
+
+<h3> I want to share a file, but I am behind a firewall </h3>
+
+If you can configure the firewall to forward the port to your computer
+(most commercially available home router/firewalls have this ability)
+you can make it work.  The URLs in the Local Addresses panels will
+<b>not</b> be correct from the point of view of a peer out on the
+public internet.
+
+<p> Alternatively, have your peer run Flea2Flea and add an Uploadable.
+Once he tells you his address and the upload tag, you can use any
+modern web browser to upload the file to your peer.
+
+<h3> I want to share a file, but both I and my peer are behind
+firewalls </h3>
+
+If you are both behind the same firewall, then it is not a problem,
+because the firewall will not be involved in the communication.
+<p>Assuming you are behind <b>different</b> firewalls, then at least one
+of you will have to configure your firewall for port forwarding and
+run Flea2Flea so that the other can upload/download using a web
+browser.
+
+
+
+<h3> I want to run a web site </h3>
+
+Do not use Flea2Flea.  Use a proper web server like Apache.  Flea2Flea
+will not serve files when you are not running the GUI.  Flea2Flea does
+not remember shared files between sessions.
+
+
+<h3> I want to give a file to my friend, but he is not logged in right
+now </h3>
+
+You should probably just email it to him.  If his email server can not
+handle large files, then you will just have to wait till you are both
+logged on and use Flea2Flea.
+
+
+<h3> I want to share a file anonymously with complete strangers </h3>
+
+While Flea2Flea will not prevent this, it does not really have any way to
+publicize that the file is available.  There is no central server or
+registry.  You would have to publicize the location through some other
+means.  
+
+<p>Also, file sharing only <b>seems</b> anonymous.  For other
+computers to download the file, they have to know your internet
+address, and if somebody needs to track you down, they can.
+
+<p>
+<hr>
+
+<p>Flea2Flea's strength is small-scale ad-hoc file sharing: much like
+giving a CD-R to your friend in the office next to yours, except that
+you do not have to burn a CD, and the room can be on the other side of
+the world.
+
+
+</body>
+</html>

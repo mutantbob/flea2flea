@@ -1,0 +1,2 @@
+Main-Class: com.purplefrog.flea2flea.Main
+Class-Path: org.mortbay.jetty.jar commons-logging.jar

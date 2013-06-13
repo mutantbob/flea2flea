@@ -1,0 +1,92 @@
+<h1>What other people must do to access your files</h1>
+
+A remote peer may access your files by browsing to the URL listed in
+the Local Addresses panel (with one exception).  The URL
+<tt>http://127.0.0.1:8080/</tt> only works on your own machine.  If a
+remote user uses that URL, they will access their own machine, not
+yours.
+
+<h2>Private IP addresses</h2>
+
+RFC 1918 [ http://www.faqs.org/rfcs/rfc1918.html ] sets aside several
+blocks of IP addresses that will not be used on the public internet.
+They are: 10.*.*.*, 172.16-31.*.*, and 192.168.*.* .  Many home
+firewalls use 192.168.*.* addresses.  If you see that your
+LocalAddress is one of these, then you are certainly behind a
+masquerading firewall and can not share files with the outside world
+without adjusting the firewall's configuration.  However, you can
+still share files with other hosts on the same side of the firewall as
+you without additional effort.
+
+<h2> firewalls </h2>
+If there is a firewall between you and the peer, things get
+complicated.
+
+<p> If you can not arrange for the firewall to forward the port,
+people outside the firewall will not be able to access your files (it
+is the job of firewalls to prevent such access).  
+
+<p> If you <b>can</b> configure the firewall to forward the port (many
+commercially available home firewall/routers provide you with a way to
+do this), then outside users will be able to access your files.
+However, you will have to learn the IP address on the outside of your
+firewall and construct your URLs using that.  The firewall conceals
+the addresses listed in the Local Addresses panel rendering them
+useless to outside peers.
+
+<p>Assuming you have not changed the port you listen on from 8080 to
+something else, you can visit http://127.0.0.1:8080/ to see what your
+Flea2Flea share looks like to a browser.  (Remember, that address only
+works for you, not your peers).
+
+<h1>How to share a file with the world</h1>
+
+When you start Flea2Flea no files are shared with the world.
+
+<p>A file that you are sharing with the world is known as an Offering.
+To add an offering go to the <b>Menu</b> and choose <b>Add
+Offerings</b>.
+
+<p> By default the files you select will be shared as
+<tt>/<i>basename</i></tt> where <i>basename</i> is calculated by
+stripping off all the leading directories.  If you share the local
+file <tt>/auto/flash/p0001408.jpg</tt> and your Local Address is
+<tt>http://64.233.167.99:8080/</tt>, then your peers can access the
+file as <tt>http://64.233.167.99:8080/p0001408.jpg</tt> .
+
+<p> If you would like to change the name you show to the world, go
+ahead and edit the URI column in the "Available to downloaders" table.
+The URI is not required to have any relation to the name of the file.
+You can put many slashes in the URI (e.g. /forwoog/songs/1.mp3)
+
+<h1>How to accept a file from the world</h1>
+
+When you start Flea2Flea peers are not permitted to upload files to
+you.  To accept files go to the <b>Menu</b> and choose <b>Add
+Uploadable</b> to create an upload slot.
+
+<ul>
+<li> You will have to choose a tag.  This is what your peer must type
+into the Tag field of the upload section of the Public Index web page.
+<li>Then you must choose a destination file.  Do not pick the name of
+an existing file because it will be overwritten when someone uploads
+to you. <li> The final parameter is the maximum file size.  You can
+use this to prevent your peer from filling up your hard drive with
+garbage.  You can use suffixes like "k", "m", and "g" for kilobytes,
+megabytes, and gigabytes.
+</ul>
+
+<p> When one of your peers starts uploading to a slot that slot is
+disabled.  This prevents people from overwriting uploads.  If anything
+goes wrong with the upload, you can re-activate it from the GUI and
+have the peer try again.
+
+<p> It is also possible to designate upload <b>directories</b>.
+Instead of choosing a file, choose a directory.  When you set the size
+limit, that is actually a restriction on the total number of bytes in
+the directory and its subdirectories.  If you set aside 2 gigabytes
+and there are already 1.5 gigabytes of files in that directory, then
+there are only 0.5 gigabytes available to uploaders.  Upload
+directories are <b>not</b> disabled when someone starts uploading.
+Therefore it is possible for multiple files to be uploaded without
+your intervention.
