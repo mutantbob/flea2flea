@@ -1,5 +1,5 @@
 /*
- * Copyright 2005
+ * Copyright 2005-2013
  * Robert Forsman <thoth@purplefrog.com>
  *
 
@@ -12,7 +12,6 @@ package com.purplefrog.rfc2046;
 
 import java.io.*;
 import java.util.*;
-import java.util.regex.*;
 
 import com.purplefrog.apachehttpcliches.*;
 import org.apache.http.*;
@@ -153,43 +152,6 @@ public class MultiPartIterator
         return value;
     }
 
-    public static final Pattern colon = Pattern.compile("\\s*:\\s*");
-
-    public static class Header
-	    implements Comparable
-    {
-	public final String raw;
-	public final String lowerKey;
-
-	public final String value;
-
-	public Header(String str)
-	{
-	    raw = str;
-	    Matcher m = colon.matcher(raw);
-	    if (m.find()) {
-		lowerKey = raw.substring(0, m.start()).toLowerCase();
-		value = raw.substring(m.end());
-	    } else {
-		lowerKey = raw.toLowerCase();
-		value = null;
-	    }
-
-            if (lowerKey.charAt(0) == '\n')
-                new Exception("WTF?").printStackTrace();
-	}
-
-	public int compareTo(Object o)
-	{
-	    return lowerKey().compareTo(((Header)o).lowerKey());
-	}
-
-	public String lowerKey()
-	{
-	    return lowerKey;
-	}
-    }
-
     public class Part2
     {
 	protected final Map headers = new TreeMap();
@@ -281,7 +243,7 @@ public class MultiPartIterator
 
     }
 
-    private  class BoundaryHunter
+    private class BoundaryHunter
 	    extends InputStream
     {
 	boolean boundaryPossible=true;
@@ -418,12 +380,9 @@ public class MultiPartIterator
                 return fillFromCache(b, off, len);
             } else {
                 eof=true; // uhoh, boundary!
-                _lastPart = i>=_byteBoundary.length; // wow, final -- and everything
-                int pos2;
-                if (_lastPart) {
-                    pos2 = _byteBoundary.length;
-                } else {
-                    pos2 = _byteBoundary.length-2;
+                _lastPart = i>=_byteBoundary.length; // wow, final "--" and everything
+                if (!_lastPart) {
+                    int pos2 = _byteBoundary.length - 2;
                     for(; i>=pos2; i--) {
                         if (cacheQty +i<cache.length) {
 //                            debugPrint("unread("+cache[cacheQty+i]+")");
