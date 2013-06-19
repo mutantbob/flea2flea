@@ -13,28 +13,29 @@ package com.purplefrog.flea2flea;
 import java.io.*;
 import java.util.*;
 import java.util.regex.*;
-import javax.servlet.http.*;
 
-import org.mortbay.http.*;
-import org.mortbay.util.*;
-import org.mortbay.servlet.*;
-import org.apache.commons.logging.*;
+import com.purplefrog.apachehttpcliches.*;
+import org.apache.http.*;
 
+/**
+ * A rather lightly-tested implementation of RFC2046
+ *
+ */
 public class MultiPartIterator
 {
-    private static Log log = LogFactory.getLog(MultiPartRequest.class);
-
-    HttpServletRequest _request;
     String _boundary;
-    LineInput _in;
+
+    /**
+     * includes the leading "\r\n" ; and a trailing "--" (which is only relevant for final boundary)
+     */
     byte[] _byteBoundary;
 
     boolean _lastPart=false;
-    MultiMap _partMap = new MultiMap(10);
-    int _char=-2;
 
     Part2 partCache = null;
     private static final String CORRECT_CONTENT_TYPE = "multipart/form-data";
+    private PushbackInputStream istr;
+    private boolean corrupted=false;
 
     /**
      * @deprecated for debugging only
@@ -45,47 +46,72 @@ public class MultiPartIterator
 	setInputStream(istr, boundary);
     }
 
-    public MultiPartIterator(HttpServletRequest request)
-	    throws IOException
+
+    public MultiPartIterator(HttpRequest req_)
+        throws IOException
     {
-	_request=request;
+        org.apache.http.Header contentType_ = req_.getFirstHeader("Content-Type");
+        boolean cct =  null != contentType_ && contentType_.getValue().startsWith(CORRECT_CONTENT_TYPE);
 
-	if (!correctContentType(request))
-	    throw new IOException("Not " + CORRECT_CONTENT_TYPE + " request");
-	String content_type = request.getHeader(HttpFields.__ContentType);
-	if(log.isDebugEnabled())log.debug("Multipart content type = "+content_type);
+        if (!cct) {
+            throw new IOException("Not "+CORRECT_CONTENT_TYPE+" request");
+        }
 
-	setInputStream(request.getInputStream(),
-		value(content_type.substring(content_type.indexOf("boundary="))));
+        String contentType = contentType_.getValue();
+        String boundary = contentType.substring(contentType.indexOf("boundary="));
 
+        setInputStream(ApacheHTTPCliches.requestBodyAsInputStream(req_), value(boundary));
     }
 
-    public static boolean correctContentType(HttpServletRequest request)
-    {
-	String content_type = request.getHeader(HttpFields.__ContentType);
-	boolean b = content_type.startsWith(CORRECT_CONTENT_TYPE);
-	return b;
-    }
 
     private void setInputStream(InputStream istr, String boundary)
 	    throws IOException
     {
-	_in = new LineInput(istr);
+	this.istr = new PushbackInputStream(istr);
 
 	// Extract boundary string
 	_boundary="--" + boundary;
 
-	if(log.isDebugEnabled())log.debug("Boundary="+_boundary);
-	_byteBoundary= (_boundary+"--").getBytes(StringUtil.__ISO_8859_1);
 
-	// Get first boundary
-	String line = _in.readLine();
-	if (!line.equals(_boundary))
-	{
-	    log.warn(line);
-	    throw new IOException("Missing initial multi part boundary");
-	}
-//	loadAllParts();
+        _byteBoundary= ("\r\n"+_boundary+"--").getBytes();
+
+        // Get first boundary
+        String line = readLine(istr);
+        if (! line.equals(_boundary)) {
+            throw new IOException("Missing initial multi part boundary");
+        }
+
+    }
+
+    public static String readLine(InputStream istr)
+        throws IOException
+    {
+        byte[] terminator="\r\n".getBytes();
+
+        StringBuilder rval = new StringBuilder();
+        int tcursor=0;
+        while(true) {
+            int ch= istr.read();
+
+            if (ch<0)
+                break;
+
+            rval.append((char) ch);
+
+            byte ch_ = (byte) ch;
+            if (ch_==terminator[tcursor]) {
+                tcursor++;
+                if (tcursor >= terminator.length)
+                    break;
+            } else {
+                // this only works because the terminator doesn't contain any duplicate characters
+                tcursor = 0;
+            }
+
+        }
+
+        int l2 = rval.length() - ( tcursor==terminator.length ? tcursor :0);
+        return rval.substring(0, l2);
     }
 
     public Part2 getNextPart()
@@ -94,10 +120,13 @@ public class MultiPartIterator
 	if (null != partCache && !partCache.isEOF())
 	    throw new IOException("failed to drain the last part you fetched.");
 
+        if (corrupted)
+            throw new IOException("multipart stream was malformed");
+
 	if (_lastPart)
 	    return null;
 
-	return partCache = new Part2(_in);
+	return partCache = new Part2(istr);
     }
 
 
@@ -179,6 +208,9 @@ public class MultiPartIterator
 		lowerKey = raw.toLowerCase();
 		value = null;
 	    }
+
+            if (lowerKey.charAt(0) == '\n')
+                new Exception("WTF?").printStackTrace();
 	}
 
 	public int compareTo(Object o)
@@ -198,16 +230,16 @@ public class MultiPartIterator
 
 	private final BoundaryHunter istr;
 
-	public Part2(LineInput in)
+	public Part2(InputStream in)
 		throws IOException
 	{
 	    String line;
 	    boolean first = true;
-	    while (null != (line = in.readLine())) {
+	    while (null != (line = readLine(in))) {
 		if (first) {
 		    first = false;
-		    if (0 == line.length())
-			continue;
+//		    if (0 == line.length())
+//			continue;
 		}
 
 		if (0 == line.length())
@@ -288,6 +320,92 @@ public class MultiPartIterator
 	}
 
     }
+
+    private  class BoundaryHunterNew
+	    extends InputStream
+    {
+
+	boolean cr=false,lf=false;
+
+	boolean eof=false;
+
+	public int read()
+		throws IOException
+	{
+	    byte[] x = new byte[1];
+	    if (0>read(x))
+		return -1;
+	    else
+		return x[0];
+	}
+
+	public boolean isEOF()
+	{
+	    return eof;
+	}
+
+	/** sweet monkey jesus, what a kludge.  If you even THINK about hacking this, make sure you look at the unit tests. */
+	public int read(byte[] b, int off, int len)
+		throws IOException
+	{
+	    if (eof)
+		return -1;
+
+            int cursor = off;
+            int rval=0;
+            while (len>0) {
+                int ch = istr.read();
+
+                if (ch<0) {
+                    // EOF
+                    if (rval==0)
+                        return ch;
+                    else
+                        break;
+                }
+
+                if (ch!='\r') {
+                    b[cursor] = (byte) ch;
+                    cursor++;
+                    len--;
+                    rval++;
+                } else {
+                    if (rval != 0) {
+                        return rval;
+                    }
+
+                    istr.unread(ch);
+                    return readWithPossibleBoundary(b, off, len);
+                }
+            }
+
+            return rval;
+
+	}
+
+        private int readWithPossibleBoundary(byte[] b, int off, int len)
+            throws IOException
+        {
+
+            throw new UnsupportedOperationException("dammit, not finished yet");
+
+        }
+
+        private boolean crORlf(int b)
+	{
+	    return '\r' == b || '\n' == b;
+	}
+
+	public void drain()
+		throws IOException
+	{
+	    byte[] buf = new byte[64<<10];
+	    while (0<read(buf)) {
+
+	    }
+	}
+    }
+
     private  class BoundaryHunter
 	    extends InputStream
     {
@@ -320,90 +438,160 @@ public class MultiPartIterator
 	    if (eof)
 		return -1;
 
-	    int i;
-	    if (boundaryPossible) {
+            int nRead =0;
+            while (nRead<len) {
+                int n = read_(b, off+nRead, len-nRead);
+                debugPrint("read_ returns "+n);
+                if (n<0) {
+                    if (nRead==0)
+                        return -1;
+                    break;
+                }
+                nRead+=n;
+            }
+            return nRead;
+        }
 
-		for (i=0; i<_byteBoundary.length; i++) {
-		    int ch = _in.read();
-		    if (0 > ch) {
-			_lastPart = true;
-			if (1 > i) {
-			    eof=true;
-			    return -1;
-			} else {
-			    cacheQty = i;
-			    boundaryPossible = false;
-			    return fillFromCache(b, off, len);
-			}
-		    }
-		    cache[cacheQty+i] = (byte) ch;
-		    if (cache[cacheQty+i] != _byteBoundary[i]) {
-			if (0 != i)
-			    break;
-			else {
-			    if (0 == cacheQty) {
-				if (crORlf(ch)) {
-				    cacheQty++;
-				    i--;
-				} else {
-				    break;
-				}
-			    } else if (1 == cacheQty) {
-				if ('\r' == cache[0]) {
-				    if ('\n' == ch) {
-					cacheQty++;
-					i--;
-				    } else {
-					break;
-				    }
-				} else {
-				    cacheQty++;
-				    return fillFromCache(b, off, 1);
-				}
-			    } else {
-				break;
-			    }
-			}
-		    }
-		}
-		if (i<_byteBoundary.length-2) {
-		    cacheQty += i+1;
-		    boundaryPossible = crORlf(cache[cacheQty-1]);
-		    return fillFromCache(b, off, len);
-		} else {
-		    eof=true; // uhoh, boundary!
-		    _lastPart = i>=_byteBoundary.length; // wow, final -- and everything
-		    boundaryPossible = false;
-		    return -1;
-		}
-	    } else {
-		if (0 != cacheQty) {
-		    return fillFromCache(b, off, len);
+        private int read_(byte[] b, int off, int len)
+            throws IOException
+        {
+            if (boundaryPossible) {
+                return readWithPossibleBoundary(b, off, len);
+
+            } else {
+                if (0 != cacheQty) {
+                    return fillFromCache(b, off, len);
 //		    throw new IllegalStateException();
-		}
+                }
 
-		for (i=0; i<len && !boundaryPossible; i++) {
-		    int ch = _in.read();
-		    if (0 > ch) {
-			_lastPart = true;
-			break;
-		    }
-		    if (crORlf(ch)) {
-			boundaryPossible = true;
-			cache[0]=(byte) ch;
-			cacheQty=1;
-			if (0 == i)
-			    return read(b, off, len);
-			else
-			    break;
-		    }
-		    b[i+off] = (byte) ch;
-		}
-		return i;
-	    }
-	}
+                int i;
+                for (i=0; i<len && !boundaryPossible; i++) {
+                    int ch = istr.read();
+                    debugPrint(ch + " = '" + ((char) ch) + "'");
+                    if (0 > ch) {
+                        _lastPart = true;
+                        break;
+                    }
+                    if (ch == '\r') {
+                        boundaryPossible = true;
+                        istr.unread(ch);
+                        if (0 == i)
+                            return readWithPossibleBoundary(b, off, len);
+                        else
+                            break;
+                    }
+                    b[i+off] = (byte) ch;
+                }
+                return i;
+            }
+        }
 
-	private boolean crORlf(int b)
+        private int readWithPossibleBoundary(byte[] b, int off, int len)
+            throws IOException
+        {
+            int i;
+            for (i=0; i<_byteBoundary.length; i++) {
+                int ch = istr.read();
+
+                debugPrint(ch+" = '"+ ((char) ch) + "' i=" + i+" cacheQty="+cacheQty);
+                if (0 > ch) {
+// EOF
+                    _lastPart = true;
+                    if (1 > i) {
+                        eof=true;
+                        return -1;
+                    } else {
+                        cacheQty = i;
+                        boundaryPossible = false;
+                        return fillFromCache(b, off, len);
+                    }
+                }
+                cache[cacheQty+i] = (byte) ch;
+                if (cache[cacheQty+i] != _byteBoundary[i]) {
+                    if (0 != i) {
+//                        istr.unread(ch);
+                        break;
+                    } else {
+                        if (0 == cacheQty) {
+                            if ('\r'==ch) {
+                                cacheQty++;
+                                i--;
+                            } else {
+                                break;
+                            }
+                        } else if (1 == cacheQty) {
+                            if ('\r' == cache[0]) {
+                                if ('\n' == ch) {
+                                    cacheQty++;
+                                    i--;
+                                } else {
+                                    break;
+                                }
+                            } else {
+                                cacheQty++;
+                                boundaryPossible=false;
+                                return fillFromCache(b, off, len);
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            if (i<_byteBoundary.length-2) {
+                cacheQty += i+1;
+                boundaryPossible = '\r' == (cache[cacheQty-1]);
+                return fillFromCache(b, off, len);
+            } else {
+                eof=true; // uhoh, boundary!
+                _lastPart = i>=_byteBoundary.length; // wow, final -- and everything
+                int pos2;
+                if (_lastPart) {
+                    pos2 = _byteBoundary.length;
+                } else {
+                    pos2 = _byteBoundary.length-2;
+                    for(; i>=pos2; i--) {
+                        if (cacheQty +i<cache.length) {
+                            debugPrint("unread("+cache[cacheQty+i]+")");
+                            istr.unread(cache[cacheQty + i]);
+                        }
+                    }
+                }
+                boundaryPossible = false;
+
+                devourTrailingWhitespace();
+                return -1;
+            }
+        }
+
+        private void devourTrailingWhitespace()
+            throws IOException
+        {
+            byte[] crlf = { 13, 10 };
+            int ch;
+            int crlfIdx=0;
+            while(true) {
+                ch = istr.read();
+
+                if (ch<0)
+                    return;
+
+                if (ch == crlf[crlfIdx]) {
+                    crlfIdx ++;
+                    if (crlfIdx>= crlf.length)
+                        return;
+                } else {
+                    crlfIdx=0;
+
+                    if (!Character.isWhitespace(ch)){
+                        corrupted = true;
+                        throw new IOException("non-whitespace after boundary sequence");
+                    }
+                }
+            }
+        }
+
+        private boolean crORlf(int b)
 	{
 	    return '\r' == b || '\n' == b;
 	}
@@ -431,5 +619,11 @@ public class MultiPartIterator
 
 	    }
 	}
+    }
+
+    private void debugPrint(String msg)
+    {
+        if(false)
+            System.out.println(msg.replaceAll("\r", "\\\\r").replaceAll("\n","\\\\n"));
     }
 }
