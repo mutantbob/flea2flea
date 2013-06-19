@@ -130,32 +130,6 @@ public class MultiPartIterator
     }
 
 
-    private boolean parseContentDisposition(String content_disposition, Part part)
-	    throws IOException
-    {
-	// Extract content-disposition
-	boolean form_data=false;
-	if (content_disposition==null)
-	{
-	    throw new IOException("Missing content-disposition");
-	}
-
-	StringTokenizer tok =
-	    new StringTokenizer(content_disposition,";");
-	while (tok.hasMoreTokens())
-	{
-	    String t = tok.nextToken().trim();
-	    String tl = t.toLowerCase();
-	    if (t.startsWith("form-data"))
-		form_data=true;
-	    else if (tl.startsWith("name="))
-		part._name=value(t);
-	    else if (tl.startsWith("filename="))
-		part._filename=value(t);
-	}
-	return form_data;
-    }
-
     /* ------------------------------------------------------------ */
     private String value(String nameEqualsValue)
     {
@@ -177,14 +151,6 @@ public class MultiPartIterator
                 value=value.substring(0,i);
         }
         return value;
-    }
-
-    private static class Part
-    {
-        String _name=null;
-        String _filename=null;
-        Hashtable _headers= new Hashtable(10);
-        byte[] _data=null;
     }
 
     public static final Pattern colon = Pattern.compile("\\s*:\\s*");
@@ -234,13 +200,7 @@ public class MultiPartIterator
 		throws IOException
 	{
 	    String line;
-	    boolean first = true;
 	    while (null != (line = readLine(in))) {
-		if (first) {
-		    first = false;
-//		    if (0 == line.length())
-//			continue;
-		}
 
 		if (0 == line.length())
 		    break;
@@ -325,8 +285,7 @@ public class MultiPartIterator
 	    extends InputStream
     {
 	boolean boundaryPossible=true;
-	boolean cr=false,lf=false;
-	byte[] cache = new byte[_byteBoundary.length+2];
+        byte[] cache = new byte[_byteBoundary.length+2];
 	int cacheQty=0;
 
 	boolean eof=false;
@@ -356,7 +315,7 @@ public class MultiPartIterator
             int nRead =0;
             while (nRead<len) {
                 int n = read_(b, off+nRead, len-nRead);
-                debugPrint("read_ returns "+n);
+//                debugPrint("read_ returns "+n);
                 if (n<0) {
                     if (nRead==0)
                         return -1;
@@ -382,7 +341,7 @@ public class MultiPartIterator
                 int i;
                 for (i=0; i<len && !boundaryPossible; i++) {
                     int ch = istr.read();
-                    debugPrint(ch + " = '" + ((char) ch) + "'");
+//                    debugPrint(ch + " = '" + ((char) ch) + "'");
                     if (0 > ch) {
                         _lastPart = true;
                         break;
@@ -408,7 +367,7 @@ public class MultiPartIterator
             for (i=0; i<_byteBoundary.length; i++) {
                 int ch = istr.read();
 
-                debugPrint(ch+" = '"+ ((char) ch) + "' i=" + i+" cacheQty="+cacheQty);
+//                debugPrint(ch+" = '"+ ((char) ch) + "' i=" + i+" cacheQty="+cacheQty);
                 if (0 > ch) {
 // EOF
                     _lastPart = true;
@@ -467,7 +426,7 @@ public class MultiPartIterator
                     pos2 = _byteBoundary.length-2;
                     for(; i>=pos2; i--) {
                         if (cacheQty +i<cache.length) {
-                            debugPrint("unread("+cache[cacheQty+i]+")");
+//                            debugPrint("unread("+cache[cacheQty+i]+")");
                             istr.unread(cache[cacheQty + i]);
                         }
                     }
@@ -506,12 +465,7 @@ public class MultiPartIterator
             }
         }
 
-        private boolean crORlf(int b)
-	{
-	    return '\r' == b || '\n' == b;
-	}
-
-	private int fillFromCache(byte[] dest, int off, int len)
+        private int fillFromCache(byte[] dest, int off, int len)
 	{
 	    int rval = Math.min(cacheQty, len);
 	    if (rval<1)
@@ -536,9 +490,4 @@ public class MultiPartIterator
 	}
     }
 
-    private void debugPrint(String msg)
-    {
-        if(false)
-            System.out.println(msg.replaceAll("\r", "\\\\r").replaceAll("\n","\\\\n"));
-    }
 }
