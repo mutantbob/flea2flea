@@ -4,16 +4,23 @@
  */
 package com.purplefrog.flea2flea;
 
+import com.purplefrog.apachehttpcliches.*;
+import com.purplefrog.httpcliches.*;
+import org.apache.http.*;
+import org.apache.http.protocol.*;
+import org.apache.log4j.*;
+import org.apache.log4j.Logger;
+
 import java.io.*;
+import java.net.*;
 import java.util.*;
 import java.text.*;
 
-import org.mortbay.http.*;
-import org.mortbay.http.handler.*;
-
 public class RootListing
-    extends AbstractHttpHandler
+    implements HttpRequestHandler
 {
+    private static final Logger logger = Logger.getLogger(RootListing.class);
+
     protected Map offerings;
 
     public RootListing(Map offerings)
@@ -21,36 +28,56 @@ public class RootListing
         this.offerings = offerings;
     }
 
-    public void handle(String pathInContext,
-                       String pathParams,
-                       HttpRequest request,
-                       HttpResponse response)
+    public void handle(HttpRequest req, HttpResponse rsp, HttpContext ctx)
         throws HttpException, IOException
     {
-        if ( ! "/".equals(pathInContext))
-            return;
+        RequestLine rline = req.getRequestLine();
 
-        response.setStatus(200);
-        response.setContentType("text/html");
-        PrintWriter pw = new PrintWriter(response.getOutputStream());
-        pw.println("<html>\n<head>\n<title>Flea 2 Flea public index</title>\n</head>");
+        EntityAndHeaders rval = null;
+        try {
+            if ("get".equalsIgnoreCase(rline.getMethod())) {
+                CGIEnvironment env = ApacheCGI.parseEnv(req, ctx);
+                String sortBy = HTMLTools.firstOrNull( env.args.get("sort"));
+                String payload = buildIndex(sortBy);
+                rval = EntityAndHeaders.plainPayload(200, payload, "text/html");
+            } else {
+                rval = EntityAndHeaders.plainPayload(501, "Not Implemented", "text/plain");
+            }
+            } catch (URISyntaxException e) {
+            logger.warn("", e);
+        }
 
-        pw.println("<body>\n<h1>Flea 2 Flea public index</h1>");
-        pw.println(offerings.size()+" advertised files available for download");
+        rval.apply(rsp);
+
+    }
+
+    public String buildIndex(String sortby)
+    {
+        StringBuilder buf = new StringBuilder();
+        buf.append("<html>\n<head>\n<title>Flea 2 Flea public index</title>\n</head>"
+            + "\n");
+
+        buf.append("<body>\n<h1>Flea 2 Flea public index</h1>"
+            + "\n");
+        buf.append(offerings.size() + " advertised files available for download"
+            + "\n");
         if (0 < offerings.size()) {
-	    String sortby = request.getParameter("sort");
-	    pw.println(offeringsTable(sortby));
-	}
+            buf.append(offeringsTable(sortby)
+                + "\n");
+        }
 
-        pw.println("\n<hr>");
-        pw.println("<form action=\""+IncomingHandler.URI+"\" method=\"post\" enctype=\"multipart/form-data\">\n" +
-            "<h2>upload</h2>\n"+
-            "Tag: <input type=\"text\" name=\"tag\"><br>\n"+
+        buf.append("\n<hr>"
+            + "\n");
+        buf.append("<form action=\"" + IncomingHandler.URI + "\" method=\"post\" enctype=\"multipart/form-data\">\n" +
+            "<h2>upload</h2>\n" +
+            "Tag: <input type=\"text\" name=\"tag\"><br>\n" +
             "local file to upload: <input type=\"file\" name=\"file\"> <br>\n" +
-            "<input type=\"submit\" value=\"Send File\">\n"+
-            "</form>");
-        pw.println("</body>");
-        pw.close();
+            "<input type=\"submit\" value=\"Send File\">\n" +
+            "</form>"
+            + "\n");
+        buf.append("</body>"
+            + "\n");
+        return buf.toString();
     }
 
     StringBuffer offeringsTable(String sortby)

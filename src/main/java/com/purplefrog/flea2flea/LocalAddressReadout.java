@@ -10,15 +10,15 @@ import java.util.*;
 import java.io.*;
 import javax.swing.*;
 
-import org.mortbay.http.*;
+import com.purplefrog.apachehttpcliches.*;
 
 public class LocalAddressReadout
 	extends JPanel
 {
     public JTextArea readout;
-    public HttpServer httpServer;
+    public BasicHTTPAcceptLoop httpServer;
 
-    public LocalAddressReadout(HttpServer httpServer)
+    public LocalAddressReadout(BasicHTTPAcceptLoop httpServer)
     {
 	super(new BorderLayout());
 
@@ -44,22 +44,18 @@ public class LocalAddressReadout
 	StringWriter sw = new StringWriter();
 	PrintWriter pw = new PrintWriter(sw);
 
+        int localPort = httpServer.serversocket.getLocalPort();
 	try {
-	    HttpListener[] listeners = httpServer.getListeners();
 
 	    try {
 		InetAddress localHost = InetAddress.getLocalHost();
 		pw.print("\"main\" interface :  ");
-		for (int i = 0; i < listeners.length; i++) {
-		    if (listeners[i].isStarted()) {
-			pw.print(urlFor(localHost, listeners[i].getPort())+'\n');
-		    }
-		}
+                pw.print(urlFor(localHost, localPort)+'\n');
 	    } catch (Exception e) {
 		pw.println("Unable to determine main interface: "+e.getLocalizedMessage());
 		e.printStackTrace();
 	    }
-	    if (!anyStarted(listeners)) {
+	    if (!anyStarted()) {
 		pw.println("offline.\n" +
 "Perhaps you are already running Flea2Flea, or something else is \n" +
 "using the port we wanted.  Try Menu/Change Port.");
@@ -70,7 +66,7 @@ public class LocalAddressReadout
 
 		while (ifs.hasMoreElements()) {
 		    NetworkInterface iface = (NetworkInterface) ifs.nextElement();
-		    readoutInterface(pw, iface, listeners);
+		    readoutInterface(pw, iface, localPort);
 		}
 	    }
 	} catch (IOException e) {
@@ -82,26 +78,18 @@ public class LocalAddressReadout
 	return s2;
     }
 
-    private boolean anyStarted(HttpListener[] listeners)
+    private boolean anyStarted()
     {
-	for (int i = 0; i < listeners.length; i++) {
-	    if (listeners[i].isStarted()) {
-		return true;
-	    }
-	}
-	return false;
+        return true;
     }
 
-    private static void readoutInterface(PrintWriter pw, NetworkInterface iface, HttpListener[] listeners)
+    private static void readoutInterface(PrintWriter pw, NetworkInterface iface, int port)
     {
 	pw.println("interface "+iface.getName()+" = "+iface.getDisplayName());
 	Enumeration addrs = iface.getInetAddresses();
 	while (addrs.hasMoreElements()) {
 	    InetAddress addr = (InetAddress) addrs.nextElement();
-	    for (int i = 0; i < listeners.length; i++) {
-		if (listeners[i].isStarted())
-		    pw.println("  " + urlFor(addr, listeners[i].getPort()));
-	    }
+            pw.println("  " + urlFor(addr, port));
 	}
     }
 

@@ -5,13 +5,13 @@
 package com.purplefrog.flea2flea;
 
 import java.io.*;
-import javax.servlet.*;
-import javax.servlet.http.*;
 
-import org.mortbay.util.*;
+import com.purplefrog.apachehttpcliches.*;
+import org.apache.http.*;
+import org.apache.http.protocol.*;
 
 public class IncomingHandler
-    extends HttpServlet
+    implements HttpRequestHandler
 {
     public static Logger logger=null;
     public static DonationList donations=null;
@@ -23,13 +23,28 @@ public class IncomingHandler
     {
     }
 
-    protected void doPost(HttpServletRequest req_, HttpServletResponse resp)
-        throws ServletException, IOException
+    public void handle(HttpRequest req_, HttpResponse httpResponse, HttpContext httpContext)
     {
-	MultiPartIterator iter = new MultiPartIterator(req_);
 
-	String tag = null, remoteName=null;
+        String remoteAddr = ApacheHTTPCliches.remoteAddress(httpContext).getRemoteAddress().getHostAddress();
 
+        EntityAndHeaders rval;
+        try {
+            MultiPartIterator iter = new MultiPartIterator(req_);
+
+            rval = computeResponse(remoteAddr, iter);
+        } catch (IOException e) {
+            e.printStackTrace();
+            rval = EntityAndHeaders.plainPayload(500, "I am full of explosions\n"+e.getMessage(), "text/plain");
+        }
+
+        rval.apply(httpResponse);
+    }
+
+    protected EntityAndHeaders computeResponse(String remoteAddr, MultiPartIterator iter)
+        throws IOException
+    {
+        String tag = null, remoteName = null;
 	MultiPartIterator.Part2 part;
 	while (null != (part = iter.getNextPart())) {
 	    if ("tag".equals(part.getContentName())) {
@@ -37,8 +52,7 @@ public class IncomingHandler
 	    } else if ("file".equals(part.getContentName())) {
 		remoteName = part.getFilename();
 		if (null == tag) {
-		    logAndReject(req_.getRemoteAddr(), "*missing*", remoteName, resp, "browser insanity: file before tag in multipart");
-		    return;
+                    return logAndReject(remoteAddr, "*missing*", remoteName, "browser insanity: file before tag in multipart");
 		}
 
 		break;
@@ -48,8 +62,7 @@ public class IncomingHandler
 	}
 
 	if (null == part) {
-	    logAndReject(req_.getRemoteAddr(), tag, remoteName, resp, "no file was offered");
-	    return;
+	    return logAndReject(remoteAddr, tag, remoteName, "no file was offered");
 	}
 
 	Donation don;
@@ -61,34 +74,33 @@ public class IncomingHandler
 	}
 
 	if (null == don) {
-	    logAndReject(req_.getRemoteAddr(), tag, remoteName, resp, "no matching tag");
+	    return logAndReject(remoteAddr, tag, remoteName, "no matching tag");
 
-	    return;
 	}
 
 	if (don.destination.isDirectory()) {
 	    donations.activate(don, true);
 	    long fullness = bytesInDirectory(don.destination);
 	    if (0 >= don.maxSize - fullness) {
-		logAndReject(req_.getRemoteAddr(), tag, remoteName, resp, "directory full");
-		return;
+		return logAndReject(remoteAddr, tag, remoteName, "directory full");
+
 	    }
 
 	    String x = basename(remoteName);
 	    if (1 > x.length()) {
-		logAndReject(req_.getRemoteAddr(), tag, remoteName, resp, "bad (short) name provided by peer");
-		return;
+		return logAndReject(remoteAddr, tag, remoteName, "bad (short) name provided by peer");
+
 	    }
 
 	    File f = new File(don.destination, x);
 	    if (f.exists()) {
-		logAndReject(req_.getRemoteAddr(), tag, remoteName, resp, "file already exists locally");
-		return;
+		return logAndReject(remoteAddr, tag, remoteName, "file already exists locally");
+
 	    }
-	    receiveToFile(req_, tag, remoteName, part, f, don.maxSize - fullness, resp);
+	    return receiveToFile(tag, remoteName, part, f, don.maxSize - fullness, remoteAddr);
 
 	} else {
-	    receiveToFile(req_, tag, remoteName, part, don, resp);
+	    return receiveToFile(tag, remoteName, part, don, remoteAddr);
 	}
     }
 
@@ -107,7 +119,7 @@ public class IncomingHandler
     {
 	File[] files = dir.listFiles();
 	if (null == files) {
-	    new IOException("called bytesInDirectory() on "+dir+" but listFiles() returned null");
+	    new IOException("called bytesInDirectory() on "+dir+" but listFiles() returned null").printStackTrace();
 	    return 0;
 	}
 	long rval = 0;
@@ -121,77 +133,84 @@ public class IncomingHandler
 	return rval;
     }
 
-    private static void logAndReject(String remoteAddr, String tag, String remoteName, HttpServletResponse resp, String reason)
+    private static EntityAndHeaders logAndReject(String remoteAddr, String tag, String remoteName, String reason)
 	    throws IOException
     {
 	logger.logUploadReject(remoteAddr, tag, remoteName, reason);
 
-	resp.setStatus(HttpServletResponse.SC_FORBIDDEN);
-	resp.setContentType("text/html");
+        StringBuilder pw = new StringBuilder();
+	pw.append("<html><head><title>upload declined</title></head>");
+	pw.append("<body>");
+	pw.append("Upload of "+remoteName+" to slot "+tag+" <b>declined</b>.");
+	pw.append(BACK_LINK);
+	pw.append("</body></html>");
 
-	PrintWriter pw = resp.getWriter();
-	pw.println("<html><head><title>upload declined</title></head>");
-	pw.println("<body>");
-	pw.println("Upload of "+remoteName+" to slot "+tag+" <b>declined</b>.");
-	pw.println(BACK_LINK);
-	pw.println("</body></html>");
-	pw.close();
+        return EntityAndHeaders.plainPayload(403, pw.toString(), "text/html");
     }
 
-    private static void receiveToFile(HttpServletRequest req_, String tag, String remoteName, MultiPartIterator.Part2 req, Donation don, HttpServletResponse resp)
+    private static EntityAndHeaders receiveToFile(String tag, String remoteName, MultiPartIterator.Part2 req, Donation don, String remoteAddr)
 	    throws IOException
     {
-	receiveToFile(req_, tag, remoteName, req, don.destination, don.maxSize, resp);
+        return receiveToFile(tag, remoteName, req, don.destination, don.maxSize, remoteAddr);
     }
 
-    private static void receiveToFile(HttpServletRequest req_, String tag, String remoteName, MultiPartIterator.Part2 req, File destination, long maxSize, HttpServletResponse resp)
+    public static void copy(InputStream istr, FileOutputStream ostr, long nBytes)
+        throws IOException
+    {
+        byte[] buffer = new byte[(int) Math.min(64<<10,nBytes)];
+        while (nBytes >0) {
+            int n = istr.read(buffer, 0, (int) Math.min(nBytes, buffer.length));
+            if (n<0)
+                break;
+
+            ostr.write(buffer, 0, n);
+        }
+
+    }
+
+    private static EntityAndHeaders receiveToFile(String tag, String remoteName, MultiPartIterator.Part2 req, File destination, long maxSize, String remoteAddr)
 	    throws IOException
     {
-	logger.logUploadStart(req_.getRemoteAddr(), tag, remoteName);
+	logger.logUploadStart(remoteAddr, tag, remoteName);
 	boolean shortWrite;
 	try {
 	    InputStream istr = req.getInputStream();
 	    FileOutputStream ostr = new FileOutputStream(destination);
 
 	    try {
-		IO.bufferSize = 64<<10;
-		IO.copy(istr, ostr, maxSize);
+		copy(istr, ostr, maxSize);
 		shortWrite = 0 <= istr.read();
 	    } finally {
 		ostr.close();
 	    }
 	} catch (IOException e) {
-	    logger.logUploadFail(req_.getRemoteAddr(), tag, remoteName);
+	    logger.logUploadFail(remoteAddr, tag, remoteName);
 	    logger.logException(e);
 
-	    resp.setStatus(500);
-	    resp.setContentType("text/html");
+            StringBuilder pw = new StringBuilder();
+	    pw.append("<html><head><title>upload malfunction</title></head>");
+	    pw.append("<body>");
+	    pw.append("<b>Malfunction</b> while copying from "+remoteName+" to slot "+tag);
+	    pw.append(BACK_LINK);
+	    pw.append("</body></html>");
 
-	    PrintWriter pw = resp.getWriter();
-	    pw.println("<html><head><title>upload malfunction</title></head>");
-	    pw.println("<body>");
-	    pw.println("<b>Malfunction</b> while copying from "+remoteName+" to slot "+tag);
-	    pw.println(BACK_LINK);
-	    pw.println("</body></html>");
-	    pw.close();
-	    throw e;
+	    return EntityAndHeaders.plainPayload(200, pw.toString(), "text/html");
+
 	}
 
-	logger.logUploadFinish(req_.getRemoteAddr(), tag, remoteName, destination.length());
+	logger.logUploadFinish(remoteAddr, tag, remoteName, destination.length());
 
-	resp.setStatus(200);
-	resp.setContentType("text/html");
-
-	PrintWriter pw = resp.getWriter();
-	pw.println("<html><head><title>upload succeeded</title></head>");
-	pw.println("<body>");
+	StringBuilder pw = new StringBuilder();
+	pw.append("<html><head><title>upload succeeded</title></head>");
+	pw.append("<body>");
 	long l = destination.length();
-	pw.println("<b>Uploaded</b> "+l+" bytes from "+remoteName+" to slot "+tag+".\n");
+	pw.append("<b>Uploaded</b> "+l+" bytes from "+remoteName+" to slot "+tag+".\n");
 	if (shortWrite)
-	    pw.println("<b>This is not the entirety of the file you offered<blink>!</blink></b>.\n");
-	pw.println(BACK_LINK);
-	pw.println("</body></html>");
-	pw.close();
+	    pw.append("<b>This is not the entirety of the file you offered<blink>!</blink></b>.\n");
+	pw.append(BACK_LINK);
+	pw.append("</body></html>");
+
+        return EntityAndHeaders.plainPayload(200, pw.toString(), "text/html");
     }
 
 }

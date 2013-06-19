@@ -9,15 +9,14 @@ import java.awt.event.*;
 import java.net.*;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.*;
 import java.util.prefs.*;
 import java.io.*;
 import javax.swing.*;
 import javax.swing.event.*;
 
-import org.mortbay.http.*;
-import org.mortbay.http.handler.*;
-import org.mortbay.jetty.servlet.*;
-import org.mortbay.util.*;
+import com.purplefrog.apachehttpcliches.*;
+import org.apache.http.protocol.*;
 
 public class Main
     extends JFrame
@@ -26,17 +25,19 @@ public class Main
     private List offerings;
     private DonationList donations;
     private DonationsTable donationsTable;
-    private HttpServer httpServer;
+    private BasicHTTPAcceptLoop httpServer;
     private LocalAddressReadout addressReadout;
     private Logger logger;
+    private Executor executor;
 
-    public Main(List offerings_, DonationList donations_, Logger logger, HttpServer httpserver)
+    public Main(List offerings_, DonationList donations_, Logger logger, BasicHTTPAcceptLoop httpserver, ExecutorService executor)
     {
         super("Flea2Flea");
         offerings = offerings_;
         donations = donations_;
 	httpServer = httpserver;
 	this.logger = logger;
+        this.executor = executor;
 
         final MenuBar mb = new MenuBar();
 	fillMenuBar(mb);
@@ -185,49 +186,42 @@ public class Main
 	DonationList donations = new DonationList();
 //	donations.add(new Donation("ooga", new File("/tmp/x"), 4L<<20));
         Logger logger = new Logger();
-        HttpServer x = fireUpWebServer(logger, new WiggyMap(offerings), donations, port);
+        ExecutorService executor = Executors.newFixedThreadPool(4);
+        try {
+            BasicHTTPAcceptLoop webServer = fireUpWebServer(logger, new WiggyMap(offerings), donations, port, executor);
 
-        Main fr = new Main(offerings, donations, logger, x);
-        fr.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        fr.pack();
-        centerWindow(fr);
-        fr.setVisible(true);
+            Main fr = new Main(offerings, donations, logger, webServer, executor);
+            fr.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            fr.pack();
+            centerWindow(fr);
+            fr.setVisible(true);
 
-        dlg.requestFocus();
+            dlg.requestFocus();
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.exit(1);
+        }
     }
 
-    private static HttpServer fireUpWebServer(Logger logger, Map offerings, DonationList donations, int port)
+    public static BasicHTTPAcceptLoop fireUpWebServer(Logger logger, Map offerings, DonationList donations, int port, Executor executor)
+        throws IOException
     {
-        HttpServer httpServer = new HttpServer();
-        SocketListener listener = new SocketListener();
-        listener.setPort(port);
-        httpServer.addListener(listener);
+        HttpRequestHandlerRegistry registry = new HttpRequestHandlerRegistry();
 
-        HttpContext context = new HttpContext();
-        context.setContextPath("/");
-        context.setResourceBase("/");
-        context.addHandler(new OutboundHandler(offerings, logger));
-        //context.addHandler(new IncomingHandler(logger));
-        context.addHandler(new RootListing(offerings));
-        final ServletHandler servletHandler = new ServletHandler();
+
+        registry.register("/*", new OutboundHandler(offerings, logger));
+        registry.register("/", new RootListing(offerings));
+        registry.register(IncomingHandler.URI, new IncomingHandler());
         IncomingHandler.logger = logger;
         IncomingHandler.donations = donations;
-        servletHandler.addServlet(IncomingHandler.URI,
-            IncomingHandler.class.getName()
-            //Dump.class.getName()
-        );
-        context.addHandler(servletHandler);
-        context.addHandler(new NotFoundHandler());
 
-        httpServer.addContext(context);
+        // XXX must rehack to handle socket failures and still run.
 
-        try {
-            httpServer.start();
-        } catch (MultiException e) {
-            e.printStackTrace();
-        }
+        BasicHTTPAcceptLoop httpServer = new BasicHTTPAcceptLoop(port, registry, executor);
 
-	Preferences.userNodeForPackage(Main.class).put("port", ""+listener.getPort());
+        new Thread(httpServer).start();
+
+	Preferences.userNodeForPackage(Main.class).put("port", ""+port);
 
 	return httpServer;
     }
@@ -358,10 +352,10 @@ public class Main
     {
 	public void actionPerformed(ActionEvent evt)
 	{
-	    HttpListener[] socks = httpServer.getListeners();
-	    String initialText = 0 < socks.length ? socks[0].getPort() + "" : null;
 
-	    int np = fireDialog(initialText);
+            String initialText = "" + httpServer.serversocket.getLocalPort();
+
+            int np = fireDialog(initialText);
 
 	    if (0 >= np)
 		return;
@@ -378,17 +372,15 @@ public class Main
 	private void rigNewSocket(int np)
 		throws Exception
 	{
-	    HttpListener[] socks;
-	    socks = httpServer.getListeners();
-	    SocketListener newListener = new SocketListener();
-	    newListener.setPort(np);
-	    httpServer.addListener(newListener);
-	    newListener.start();
-	    for (int i = 0; i < socks.length; i++) {
-		httpServer.removeListener(socks[i]);
-	    }
+            BasicHTTPAcceptLoop news = new BasicHTTPAcceptLoop(np, httpServer.registry, executor);
 
-	    Preferences.userNodeForPackage(Main.class).put("port", ""+newListener.getPort());
+            httpServer.pleaseStop();
+
+            httpServer = news;
+
+            new Thread(news).start();
+
+	    Preferences.userNodeForPackage(Main.class).put("port", "" + np);
 	}
 
 	private int fireDialog(String initialText)
