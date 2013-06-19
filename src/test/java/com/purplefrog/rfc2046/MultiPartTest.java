@@ -2,12 +2,11 @@
  * Copyright 2002
  * Robert Forsman <thoth@purplefrog.com>
  */
-package com.purplefrog.flea2flea.test;
+package com.purplefrog.rfc2046;
 
 import java.io.*;
 import java.util.*;
 
-import com.purplefrog.flea2flea.*;
 import junit.framework.*;
 
 public class MultiPartTest

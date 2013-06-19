@@ -8,7 +8,7 @@
  * author  Greg Wilkins
  * author  Jim Crossley
  */
-package com.purplefrog.flea2flea;
+package com.purplefrog.rfc2046;
 
 import java.io.*;
 import java.util.*;

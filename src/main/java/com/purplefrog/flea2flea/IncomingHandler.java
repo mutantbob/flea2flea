@@ -7,6 +7,7 @@ package com.purplefrog.flea2flea;
 import java.io.*;
 
 import com.purplefrog.apachehttpcliches.*;
+import com.purplefrog.rfc2046.*;
 import org.apache.http.*;
 import org.apache.http.protocol.*;
 
