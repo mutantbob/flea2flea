@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.regex.*;
 
 import com.purplefrog.apachehttpcliches.*;
+import com.purplefrog.httpcliches.*;
 import org.apache.http.*;
 import org.apache.http.entity.*;
 import org.apache.http.message.*;
@@ -34,7 +35,8 @@ public class OutboundHandler
     {
         String pathInContext = request.getRequestLine().getUri();
 
-	Offering of = (Offering) offerings.get(pathInContext);
+        String tag = HTMLTools.decodePercent(pathInContext);
+        Offering of = (Offering) offerings.get(tag);
 
         EntityAndHeaders rval;
         {
